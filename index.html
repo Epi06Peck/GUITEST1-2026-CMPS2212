@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>CineSearch Pro</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app" data-loading="false">
+      <h1>CineSearch Pro 🎬</h1>
+
+      <!-- Search Input -->
+      <input
+        type="text"
+        id="search-input"
+        placeholder="Search for a movie..."
+      />
+
+      <!-- Loading Spinner -->
+      <div class="spinner">Loading...</div>
+
+      <!-- Results List -->
+      <div id="results"></div>
+
+      <!-- Template (REQUIRED for fragment) -->
+      <template id="movie-template">
+        <div class="movie-item">
+          <img class="poster" />
+          <span class="title"></span>
+        </div>
+      </template>
+    </div>
+
+    <script src="main.js"></script>
+  </body>
+</html>
