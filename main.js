@@ -1,66 +1,129 @@
-class SearchComp {
-  constructor() {
-    this.apikey = "4597190b0abd5fed73f4b45ff2b05a5c";
-    this.baseUrl = "https://api.themoviedb.org/3";
+function createSearchApp() {
+  const apikey = "4597190b0abd5fed73f4b45ff2b05a5c";
+  const baseUrl = "https://api.themoviedb.org/3";
 
-    this.cache = new Map();
-    this.debounceTimer = null;
+  //  STATE
+  const cache = new Map();
+  let debounceTimer = null;
+  let abortController = null;
+  let selectedIndex = -1;
+  let currentResults = [];
+  let currentQuery = "";
 
-    this.app = document.getElementById("app");
-    this.input = document.getElementById("search-input");
-    this.resultsCont = document.getElementById("results");
+  const app = document.getElementById("app");
+  const input = document.getElementById("search-input");
+  const resultsCont = document.getElementById("results");
 
-    this.init();
+  // INIT
+  function init() {
+    input.addEventListener("input", (e) => {
+      handleInput(e.target.value);
+    });
+    document.addEventListener("keydown", handleKeyDown);
   }
 
-  init() {
-    this.input.addEventListener("input", (e) => {
-      this.handleInput(e.target.value);
+  // keydown function ---
+  function handleKeyDown(e) {
+    const items = resultsCont.querySelectorAll(".movie-item");
+
+    if (!items.length) return;
+
+    if (e.key === "ArrowDown") {
+      selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+      updateSelection(items);
+    }
+
+    if (e.key === "ArrowUp") {
+      selectedIndex = Math.max(selectedIndex - 1, 0);
+      updateSelection(items);
+    }
+
+    if (e.key === "Enter" && selectedIndex >= 0) {
+      items[selectedIndex].click();
+    }
+  } // keydown function --- end
+
+  // helper function to update selection from what keydown value was pressed
+  function updateSelection(items) {
+    items.forEach((item, index) => {
+      item.classList.toggle("active", index === selectedIndex);
     });
   }
 
-  handleInput(value) {
-    this.debounceSearch(value);
+  // safe highlighting
+  function buildHighlightedTitle(title, query) {
+    const container = document.createElement("span");
+
+    const idx = title.toLowerCase().indexOf(query.toLowerCase());
+
+    if (idx === -1) {
+      container.textContent = title;
+      return container;
+    }
+
+    const before = document.createTextNode(title.slice(0, idx));
+    const match = document.createElement("span");
+    const after = document.createTextNode(title.slice(idx + query.length));
+
+    match.className = "highlight";
+    match.textContent = title.slice(idx, idx + query.length);
+
+    container.appendChild(before);
+    container.appendChild(match);
+    container.appendChild(after);
+
+    return container;
   }
 
-  debounceSearch(value) {
-    clearTimeout(this.debounceTimer); //clear the timer
+  function handleInput(value) {
+    debounceSearch(value);
+  }
 
-    // set new timer
-    this.debounceTimer = setTimeout(() => {
-      this.searchMovies(value);
+  function debounceSearch(value) {
+    clearTimeout(debounceTimer); //clear the timer
+    //set new timer
+    debounceTimer = setTimeout(() => {
+      searchMovies(value);
     }, 300); // 300 (wait this time before firing api call)
   }
 
-  searchMovies(query) {
+  //function searchmovies ----
+  function searchMovies(query) {
     if (!query.trim()) {
-      // no query then just return
-      this.resultsCont.textContent = "";
+      //no query then just return
+      resultsCont.textContent = "";
+      setLoading(false);
       return;
     }
 
     const queryLowerCase = query.toLowerCase().trim();
+    currentQuery = queryLowerCase; // keep track of the current query
+    selectedIndex = -1;
 
-    // must check cache first
-    if (this.cache.has(queryLowerCase)) {
+    // CACHE CHECK - MUST CHECK CACHE FIRST
+    if (cache.has(queryLowerCase)) {
       console.log("cache has it hehe");
-      this.renderResults(this.cache.get(queryLowerCase));
+      const cached = cache.get(queryLowerCase);
+      currentResults = cached;
+      renderResults(cached);
       return;
     }
 
-    //abort Controller
-    if (this.abortController) {
-      this.abortController.abort();
+    // ABORT CONTROLLER
+    if (abortController) {
+      abortController.abort();
     }
-    this.abortController = new AbortController();
-    const currentController = this.abortController;
 
-    this.setLoading(true);
+    abortController = new AbortController();
+    const currentController = abortController;
 
-    this.fetchMovies(queryLowerCase, this.abortController.signal)
+    setLoading(true);
+
+    fetchMovies(queryLowerCase, abortController.signal)
       .then((data) => {
-        this.cache.set(queryLowerCase, data.results);
-        this.renderResults(data.results);
+        cache.set(queryLowerCase, data.results);
+        renderResults(data.results);
+        currentResults = data.results;
       })
       .catch((error) => {
         if (error.name === "AbortError") {
@@ -70,14 +133,15 @@ class SearchComp {
         }
       })
       .finally(() => {
-        if (this.abortController === currentController) {
-          this.setLoading(false);
+        if (abortController === currentController) {
+          setLoading(false);
         }
       });
-  }
+  } //function searchmovies ----end
 
-  fetchMovies(query, signal) {
-    const url = `${this.baseUrl}/search/movie?api_key=${this.apikey}&query=${encodeURIComponent(query)}`;
+  //function fethmovies ---
+  function fetchMovies(query, signal) {
+    const url = `${baseUrl}/search/movie?api_key=${apikey}&query=${encodeURIComponent(query)}`;
 
     return fetch(url, { signal }).then((response) => {
       if (!response.ok) {
@@ -87,21 +151,23 @@ class SearchComp {
     });
   }
 
-  renderResults(movies) {
-    this.resultsCont.innerHTML = ""; // here were clearing the container content, so we can utilize innerHTML
+  function renderResults(movies) {
+    selectedIndex = -1; // resets selection when new results render
+    resultsCont.innerHTML = ""; // here were clearing the container content,
+    //  so we can utilize innerHTML
 
     const template = document.getElementById("movie-template");
     const fragment = new DocumentFragment();
 
     movies.forEach((movie) => {
-      const clone = template.content.cloneNode(true); //cloned template for each movie
+      const clone = template.content.cloneNode(true);
 
-      const titleEl = clone.querySelector(".title"); // title
-      const imgEl = clone.querySelector(".poster"); // image
+      const titleEl = clone.querySelector(".title"); //the title
+      const imgEl = clone.querySelector(".poster"); // the image/poster
 
-      titleEl.textContent = movie.title;
-
-      // Add image logic
+      const highlighted = buildHighlightedTitle(movie.title, currentQuery);
+      titleEl.appendChild(highlighted);
+      //THE IMAGE LOGIC
       if (imgEl) {
         if (movie.poster_path) {
           imgEl.src = `https://image.tmdb.org/t/p/w200${movie.poster_path}`;
@@ -112,29 +178,33 @@ class SearchComp {
       }
 
       clone.querySelector(".movie-item").addEventListener("click", () => {
-        this.handleMovieSelection(movie.id);
+        handleMovieSelection(movie.id);
       });
 
-      fragment.appendChild(clone); // cloned template is append to a document fragment
+      fragment.appendChild(clone);
     });
-    this.resultsCont.appendChild(fragment); //document fragment is appended to the DOM in one operation
-  } //this improves rendering performance rather than rendering multiple reflows
 
-  handleMovieSelection(movieId) {
+    resultsCont.appendChild(fragment);
+  } //function fethmovies --- end
+
+  function handleMovieSelection(movieId) {
+    resultsCont.innerHTML = "";
     console.log("Selected movie:", movieId);
-    this.fetchMovieInfo(movieId);
+    fetchMovieInfo(movieId);
   }
 
-  fetchMovieInfo(movieId) {
-    const detailsUrl = `${this.baseUrl}/movie/${movieId}?api_key=${this.apikey}`;
-    const creditUrl = `${this.baseUrl}/movie/${movieId}/credits?api_key=${this.apikey}`;
-    const videoUrl = `${this.baseUrl}/movie/${movieId}/videos?api_key=${this.apikey}`;
+  // function fetchmovie info ---
+  function fetchMovieInfo(movieId) {
+    setLoading(false);
+
+    const detailsUrl = `${baseUrl}/movie/${movieId}?api_key=${apikey}`;
+    const creditUrl = `${baseUrl}/movie/${movieId}/credits?api_key=${apikey}`;
+    const videoUrl = `${baseUrl}/movie/${movieId}/videos?api_key=${apikey}`;
 
     Promise.allSettled([
       // utilize allSettled so that even if one of these fetches fail we can still move forward
       //if promise.all was utilized then if one failed everything would fail and break.
       fetch(detailsUrl).then((response) => {
-        // ***
         if (!response.ok) {
           throw new Error("Details failed");
         }
@@ -151,49 +221,107 @@ class SearchComp {
           throw new Error("Videos failed");
         }
         return response.json();
-      }), // concurrent data fetching here.
-    ]).then((results) => {
-      const [details, credits, videos] = results; //store results in array.
+      }),
+    ])
+      .then((results) => {
+        const [details, credits, videos] = results; //store results in array.
 
-      if (details.status === "fulfilled") {
-        //check if the promise state is fulfilled
-        this.renderDetails(details.value);
-      } else {
-        console.error("Details did not pass");
-      }
+        if (details.status === "fulfilled") {
+          //check if the promise state is fulfilled
+          renderDetails(details.value);
+        } else {
+          console.error("Details did not pass");
+        }
 
-      if (credits.status === "fulfilled") {
-        //check if the promise state is fulfilled
-        this.renderCredits(credits.value);
-      } else {
-        console.error("Credits did not pass");
-      }
+        if (credits.status === "fulfilled") {
+          //check if the promise state is fulfilled
 
-      if (videos.status === "fulfilled") {
-        //check if the promise state is fulfilled
-        this.renderVideo(videos.value);
-      } else {
-        console.error("Videos did not pass");
-      }
+          renderCredits(credits.value);
+        } else {
+          console.error("Credits did not pass");
+        }
+
+        if (videos.status === "fulfilled") {
+          //check if the promise state is fulfilled
+          renderVideo(videos.value);
+        } else {
+          console.error("Videos did not pass");
+        }
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  } // function fetchmovie info --- end
+
+  // RENDER FUNCTIONS
+  function renderDetails(data) {
+    const container = document.createElement("div");
+
+    const title = document.createElement("h2");
+    title.textContent = data.title;
+
+    const overview = document.createElement("p");
+    overview.textContent = data.overview;
+
+    container.appendChild(title);
+    container.appendChild(overview);
+
+    resultsCont.appendChild(container);
+  }
+
+  function renderCredits(data) {
+    const castTitle = document.createElement("h3");
+    castTitle.textContent = "Top Cast";
+
+    const list = document.createElement("ul");
+
+    data.cast.slice(0, 5).forEach((actor) => {
+      const li = document.createElement("li");
+      li.textContent = actor.name;
+      list.appendChild(li);
     });
+
+    resultsCont.appendChild(castTitle);
+    resultsCont.appendChild(list);
   }
 
-  // rendering functions
-  renderDetails(data) {
-    console.log("Details:", data);
+  function renderVideo(data) {
+    const videoTitle = document.createElement("h3");
+    videoTitle.textContent = "Trailer";
+
+    const vid = data.results.find((v) => v.type === "Trailer");
+
+    if (vid) {
+      const iframe = document.createElement("iframe");
+
+      iframe.width = "560";
+      iframe.height = "315";
+      iframe.src = `https://www.youtube.com/embed/${vid.key}`;
+      iframe.title = "YouTube video player";
+      iframe.frameBorder = "0";
+
+      iframe.allow =
+        "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
+
+      iframe.allowFullscreen = true;
+
+      resultsCont.appendChild(videoTitle);
+      resultsCont.appendChild(iframe);
+    } else {
+      const noVid = document.createElement("p");
+      noVid.textContent = "No trailer available";
+
+      resultsCont.appendChild(videoTitle);
+      resultsCont.appendChild(noVid);
+    }
   }
 
-  renderCredits(data) {
-    console.log("Credits:", data);
+  function setLoading(isLoading) {
+    app.setAttribute("data-loading", isLoading);
   }
 
-  renderVideo(data) {
-    console.log("Video:", data);
-  }
-
-  setLoading(isLoading) {
-    this.app.setAttribute("data-loading", isLoading);
-  }
+  init();
 }
 
-new SearchComp();
+// START
+createSearchApp();
